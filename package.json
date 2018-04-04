@@ -1,0 +1,15 @@
+{
+  "name": "static-file-server",
+  "version": "1.0.0",
+  "description": "Used to serve files for the fractaljs project. Contains a handler for .wasm files so the Content-Type header gets set properly.",
+  "dependencies": {
+    "connect": "^3.6.6",
+    "serve-static": "^1.13.2"
+  },
+  "devDependencies": {},
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Ryan Rossiter",
+  "license": "ISC",
+}

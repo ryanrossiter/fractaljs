@@ -100,7 +100,7 @@ var fragmentShaderSource = `
         }
 
         if (ii < 500) {
-            gl_FragColor = vec4(vec3(0.5, 0.8, 0.1) * float(ii) / 100., 1.);
+            gl_FragColor = vec4(vec3(0.5, 0.8, 0.1) * float(5 * ii) / 500., 1.);
         } else {
             gl_FragColor = vec4(0., 0., 0., 1.);
             //gl_FragColor = vec4(gl_FragCoord.x / ` + window.innerWidth + `.0, gl_FragCoord.y / ` + window.innerHeight + `.0, 0, 1); // return redish-purple
