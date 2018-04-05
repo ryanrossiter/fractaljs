@@ -189,7 +189,7 @@ document.addEventListener("DOMContentLoaded", () => {
     canvas.style.display = "block";
     document.getElementsByTagName("body")[0].append(canvas);
 
-    gl = canvas.getContext("webgl2");
+    gl = canvas.getContext("webgl");
     if (!gl) {
         alert("Unable to initialize WebGL. Your browser may not support it.");
         return;
