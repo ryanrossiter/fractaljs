@@ -16,75 +16,18 @@ var fragmentShaderSource = `
     // to pick one. mediump is a good default
     precision highp float;
 
-    #pragma optionNV(fastmath off)
-    #pragma optionNV(fastprecision off)
-
     uniform vec2 u_zoom; // emulated double precision
     uniform vec2 u_offsetX;
     uniform vec2 u_offsetY;
 
-    // Begin emulated double precision methods
-    vec2 ds_set(float a) {
-        return vec2(a, 0.0);
-    }
-
-    vec2 ds_add (vec2 dsa, vec2 dsb) {
-        vec2 dsc;
-        float t1, t2, e;
-        t1 = dsa.x + dsb.x;
-        e = t1 - dsa.x;
-        t2 = ((dsb.x - e) + (dsa.x - (t1 - e))) + dsa.y + dsb.y;
-
-        dsc.x = t1 + t2;
-        dsc.y = t2 - (dsc.x - t1);
-        return dsc;
-    }
-
-    vec2 ds_sub (vec2 dsa, vec2 dsb)
-    {
-        vec2 dsc;
-        float e, t1, t2;
-
-        t1 = dsa.x - dsb.x;
-        e = t1 - dsa.x;
-        t2 = ((-dsb.x - e) + (dsa.x - (t1 - e))) + dsa.y - dsb.y;
-
-        dsc.x = t1 + t2;
-        dsc.y = t2 - (dsc.x - t1);
-        return dsc;
-    }
-
-    vec2 ds_mul (vec2 dsa, vec2 dsb) {
-        vec2 dsc;
-        float c11, c21, c2, e, t1, t2;
-        float a1, a2, b1, b2, cona, conb, split = 8193.;
-        cona = dsa.x * split;
-        conb = dsb.x * split;
-        a1 = cona - (cona - dsa.x);
-        b1 = conb - (conb - dsb.x);
-        a2 = dsa.x - a1;
-        b2 = dsb.x - b1;
-
-        c11 = dsa.x * dsb.x;
-        c21 = a2 * b2 + (a2 * b1 + (a1 * b2 + (a1 * b1 - c11)));
-
-        c2 = dsa.x * dsb.y + dsa.y * dsb.x;
-
-        t1 = c11 + c2;
-        e = t1 - c11;
-        t2 = dsa.y * dsb.y + ((c2 - e) + (c11 - (t1 - e))) + c21;
-
-        dsc.x = t1 + t2;
-        dsc.y = t2 - (dsc.x - t1);
-
-        return dsc;
-    }
-    // end emulated double precision methods
+    uniform sampler2D tex0;
+    uniform sampler2D tex1;
+    uniform sampler2D tex2;
 
     void main() {
         vec2 coord = (gl_FragCoord.xy / ` + window.innerWidth + `.0 - vec2(0.5, 0.5 * ` + window.innerHeight / window.innerWidth + `));
-        vec2 px = ds_add(ds_mul(ds_set(coord.x), u_zoom), u_offsetX);
-        vec2 py = ds_add(ds_mul(ds_set(coord.y), u_zoom), u_offsetY);
+        vec2 px = coord.x * u_zoom + u_offsetX.s;
+        vec2 py = coord.y * u_zoom + u_offsetY.s;
         vec2 ox = px;
         vec2 oy = py;
         
@@ -92,15 +35,23 @@ var fragmentShaderSource = `
         for (int i = 0; i <= 500; i++) {
             ii = i;
             vec2 tx = px;
-            px = ds_add(ds_sub(ds_mul(px,px), ds_mul(py,py)), ox); // px*px - py*py + ox
-            py = ds_add(ds_mul(ds_set(2.0), ds_mul(tx,py)), oy); // 2.0*tx*py + oy
+            px = px*px - py*py + ox;
+            py = 2.0*tx*py + oy;
             if (i > 10 && px[0] * py[0] > 10.) {
                 break;
             }
         }
 
         if (ii < 500) {
-            gl_FragColor = vec4(vec3(0.5, 0.8, 0.1) * float(5 * ii) / 500., 1.);
+            // gl_FragColor = vec4(vec3(0.5, 0.8, 0.1) * float(5 * ii) / 500., 1.);
+            // gl_FragColor = vec4(vec3(0.5, 0.8, 0.1) * ceil(log(float(ii))), 1.);
+            int img = int(ceil(log(float(ii)) / log(13.)));
+            if (img == 1)
+                gl_FragColor = texture2D(tex0, coord * vec2(1., -1.) + vec2(0.5, 0.5));
+            else if (img == 2)
+                gl_FragColor = texture2D(tex1, coord * vec2(1., -1.) + vec2(0.5, 0.5));
+            else
+                gl_FragColor = texture2D(tex2, coord * vec2(1., -1.) + vec2(0.5, 0.5));
         } else {
             gl_FragColor = vec4(0., 0., 0., 1.);
             //gl_FragColor = vec4(gl_FragCoord.x / ` + window.innerWidth + `.0, gl_FragCoord.y / ` + window.innerHeight + `.0, 0, 1); // return redish-purple
@@ -135,6 +86,60 @@ function createProgram(gl, vertexShader, fragmentShader) {
     gl.deleteProgram(program);
 }
 
+//
+// Initialize a texture and load an image.
+// When the image finished loading copy it into the texture.
+//
+function loadTexture(gl, url) {
+  const texture = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, texture);
+
+  // Because images have to be download over the internet
+  // they might take a moment until they are ready.
+  // Until then put a single pixel in the texture so we can
+  // use it immediately. When the image has finished downloading
+  // we'll update the texture with the contents of the image.
+  const level = 0;
+  const internalFormat = gl.RGBA;
+  const width = 1;
+  const height = 1;
+  const border = 0;
+  const srcFormat = gl.RGBA;
+  const srcType = gl.UNSIGNED_BYTE;
+  const pixel = new Uint8Array([0, 0, 255, 255]);  // opaque blue
+  gl.texImage2D(gl.TEXTURE_2D, level, internalFormat,
+                width, height, border, srcFormat, srcType,
+                pixel);
+
+  const image = new Image();
+  image.onload = function() {
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.texImage2D(gl.TEXTURE_2D, level, internalFormat,
+                  srcFormat, srcType, image);
+
+    // WebGL1 has different requirements for power of 2 images
+    // vs non power of 2 images so check if the image is a
+    // power of 2 in both dimensions.
+    if (isPowerOf2(image.width) && isPowerOf2(image.height)) {
+       // Yes, it's a power of 2. Generate mips.
+       gl.generateMipmap(gl.TEXTURE_2D);
+    } else {
+       // No, it's not a power of 2. Turn off mips and set
+       // wrapping to clamp to edge
+       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    }
+  };
+  image.src = url;
+
+  return texture;
+}
+
+function isPowerOf2(value) {
+  return (value & (value - 1)) == 0;
+}
+
 let gl;
 let zoom = 3, actualZoom = 3.3;
 let xOff = 0, actualXOff = 0;
@@ -142,6 +147,8 @@ let yOff = 0, actualYOff = 0;
 let zoomLoc;
 let offsetXLoc, offsetYLoc;
 let draw;
+let texture0, texture1, texture2;
+let texture0Loc, texture1Loc, texture2Loc;
 draw = function() {
     if (Math.abs(zoom - actualZoom) > Math.pow(0.1, 32)
         || Math.abs(xOff - actualXOff) > 0.00001
@@ -162,6 +169,18 @@ draw = function() {
         let topYOff = new Float32Array([actualYOff / window.innerWidth]);
         let bottomYOff = new Float32Array([actualYOff / window.innerWidth - topYOff[0]]);
         gl.uniform2fv(offsetYLoc, new Float32Array([topYOff[0], bottomYOff[0]]));
+
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, texture0);
+        gl.uniform1i(texture0Loc, 0);
+
+        gl.activeTexture(gl.TEXTURE1);
+        gl.bindTexture(gl.TEXTURE_2D, texture1);
+        gl.uniform1i(texture1Loc, 1);
+
+        gl.activeTexture(gl.TEXTURE2);
+        gl.bindTexture(gl.TEXTURE_2D, texture2);
+        gl.uniform1i(texture2Loc, 2);
 
         gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     }
@@ -220,6 +239,14 @@ document.addEventListener("DOMContentLoaded", () => {
     var stride = 0;        // 0 = move forward size * sizeof(type) each iteration to get the next position
     var offset = 0;        // start at the beginning of the buffer
     gl.vertexAttribPointer(positionAttributeLocation, size, type, normalize, stride, offset);
+
+    texture0 = loadTexture(gl, "res/img0.jpg");
+    texture1 = loadTexture(gl, "res/img1.jpg");
+    texture2 = loadTexture(gl, "res/img2.jpg");
+
+    texture0Loc = gl.getUniformLocation(program, "tex0");
+    texture1Loc = gl.getUniformLocation(program, "tex1");
+    texture2Loc = gl.getUniformLocation(program, "tex2");
 
     draw(); // begin the draw loop
 
