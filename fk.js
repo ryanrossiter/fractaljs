@@ -147,18 +147,23 @@ function isPowerOf2(value) {
 
 let gl;
 let lastFrameTime = Date.now();
-let zoom = 3, maxZoom = 3.5, minZoom = 0.0002;
+let zoom = 2, maxZoom = 2, minZoom = 0.0002;
 let zoomDir = true; // true = zoom in
-let xOff = 0.3115;
-let yOff = 0.4409;
+let zoomPoints = [
+    [0.3115, 0.4409],
+    [0.3115, -0.4409],
+    [-0.306, 0.6305],
+    [-0.306, -0.6305],
+    [-0.7458, -0.11],
+    [-0.7458, 0.11],
+];
+let lastPoint, nextPoint;
+lastPoint = nextPoint = zoomPoints[Math.floor(Math.random() * zoomPoints.length)];
 let zoomLoc;
 let offsetXLoc, offsetYLoc;
 let texture0, texture1, texture2;
 let texture0Loc, texture1Loc, texture2Loc;
-let imageQueue = [
-"https://cdn1.medicalnewstoday.com/content/images/articles/322/322868/golden-retriever-puppy.jpg",
-"https://upload.wikimedia.org/wikipedia/commons/thumb/d/d9/Collage_of_Nine_Dogs.jpg/1165px-Collage_of_Nine_Dogs.jpg",
-"https://gist.githubusercontent.com/mbostock/9511ae067889eefa5537eedcbbf87dab/raw/944b6e5fe8dd535d6381b93d88bf4a854dac53d4/mona-lisa.jpg"];
+let feed, imageQueue = [];
 let draw;
 draw = function() {
 
@@ -166,17 +171,28 @@ draw = function() {
     if ((zoom > maxZoom && !zoomDir) || (zoom < minZoom && zoomDir)) {
         zoomDir = !zoomDir;
         if (zoom < minZoom) {
-            console.log("switch");
             if (imageQueue.length >= 2) {
                 setTexture(gl, texture0, imageQueue.pop());
                 setTexture(gl, texture1, imageQueue.pop());
             }
+            lastPoint = nextPoint;
+            nextPoint = zoomPoints[Math.floor(Math.random() * zoomPoints.length)];
         } else if (zoom > maxZoom) {
             if (imageQueue.length >= 1) {
                 setTexture(gl, texture2, imageQueue.pop());
             }
         }
+
+        if (imageQueue.length < 2) {
+            feed.run();
+        }
     }
+
+    let prog = (!zoomDir? zoom / maxZoom : 1 + 1 - zoom / maxZoom) * 0.5;
+    // smooth out the ends to prevent "jumping" when really zoomed in
+    prog = Math.sin((prog - 0.5) * Math.PI) / 2 + 0.5;
+    let xOff = lastPoint[0] + (nextPoint[0] - lastPoint[0]) * prog;
+    let yOff = lastPoint[1] + (nextPoint[1] - lastPoint[1]) * prog;
 
     gl.uniform1f(zoomLoc, zoom);
     gl.uniform1f(offsetXLoc, xOff);
@@ -200,14 +216,17 @@ draw = function() {
 }
 
 document.addEventListener("DOMContentLoaded", () => {
-    let feed = new Instafeed({
-        get: 'tagged',
+    feed = new Instafeed({
+        userId: '10753322301',
+        get: 'user',
         tagName: 'qhacks',
         resolution: "standard_resolution",
         accessToken: "10753322301.fb091cf.436f289d35be4ecdb3de045a3485fca2",
         mock: true,
         success: (data) => {
-            console.log(data);
+            for (let d of data.data.reverse()) {
+                imageQueue.push(d.images.standard_resolution.url);
+            }
         }
     });
     feed.run();
